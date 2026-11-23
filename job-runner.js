@@ -137,7 +137,7 @@ class JobRunner extends EventEmitter {
       }
       try {
         const reason = String(result.reason || '').replace(/[\r\n|]/g, ' ');
-        fs.appendFileSync(path.join(this.outputDir, `${result.status}.txt`), `${row.line}|${result.status}|${reason}\n`);
+        fs.appendFileSync(path.join(this.outputDir, `${result.status}.txt`), `${row.line}\n`);
         row.state = 'done';
         row.result = result.status;
         this.counts[result.status]++;

@@ -32,7 +32,7 @@ Tự động lưu trong thư mục `AppleIDResults/run-*` bên dưới `app.getP
 - `invalid.txt`: phản hồi sai thông tin đăng nhập (HTTP 401).
 - `unchecked.txt`: tài khoản khóa (HTTP 403), lỗi mạng/proxy, timeout, dịch vụ lỗi (bao gồm HTTP 503), phản hồi chưa xác định hoặc dòng sai định dạng.
 
-Định dạng mỗi dòng kết quả: `email|password|status|reason`. File `pending.txt` do nút xuất tạo ra chỉ chứa dữ liệu đầu vào, không thêm status/reason. Mật khẩu không được truyền tới bảng kết quả trên giao diện. Các file kết quả có chứa mật khẩu để phục vụ xuất/đối soát.
+Mọi file kết quả (`valid.txt`, `invalid.txt`, `unchecked.txt`, `pending.txt`) giữ định dạng đầu vào `email|password`, không thêm status/reason. Các dòng sai định dạng được giữ nguyên trong `unchecked.txt` để có thể sửa lại. Mật khẩu không được truyền tới bảng kết quả trên giao diện. Các file kết quả có chứa mật khẩu để phục vụ xuất/đối soát.
 
 Ứng dụng chỉ thực hiện kiểm tra đăng nhập; không thực hiện sửa ngày sinh, câu hỏi bảo mật hay thông tin tài khoản.
 

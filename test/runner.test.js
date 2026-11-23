@@ -84,7 +84,7 @@ test('concurrency is bounded; end-of-input waits for in-flight tasks; pause drai
 });
 
 test('exceptions and malformed input become unchecked; all outputs are separate and original input is untouched', async t => {
-  const job = fixture(t, { ...parseAccounts('a@example.com|one\nb@example.com|two\nbad\nc@example.com|three'), concurrency: 2,
+  const job = fixture(t, { ...parseAccounts('a@example.com| one| \nb@example.com|two\nbad\nc@example.com|three'), concurrency: 2,
     check: async email => { if (email.startsWith('c')) throw new Error('network'); return { status: email.startsWith('a') ? 'valid' : 'invalid' }; }
   });
   fs.writeFileSync(job.accountPath, 'original');
@@ -92,7 +92,8 @@ test('exceptions and malformed input become unchecked; all outputs are separate 
   assert.equal(job.counts.valid, 1); assert.equal(job.counts.invalid, 1); assert.equal(job.counts.unchecked, 2);
   assert.equal(fs.readFileSync(job.accountPath, 'utf8'), 'original');
   assert.deepEqual(job.pendingLines(), ['bad', 'c@example.com|three']);
-  for (const status of ['valid', 'invalid', 'unchecked']) assert.ok(fs.readFileSync(path.join(job.outputDir, `${status}.txt`), 'utf8').includes(`|${status}|`));
+  const expected = { valid: 'a@example.com| one| \n', invalid: 'b@example.com|two\n', unchecked: 'bad\nc@example.com|three\n' };
+  for (const [status, content] of Object.entries(expected)) assert.equal(fs.readFileSync(path.join(job.outputDir, `${status}.txt`), 'utf8'), content);
 });
 
 test('write failure stops allocation and retains unsaved rows for resume', async t => {

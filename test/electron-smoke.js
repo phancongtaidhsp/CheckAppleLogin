@@ -69,6 +69,11 @@ app.once('browser-window-created', (_event, win) => {
       assert.equal(await js('document.getElementById("processed").textContent'), '6');
       assert.equal(await js('document.getElementById("progress").value'), 100);
       assert.equal(fs.readFileSync(input, 'utf8'), original);
+      const expectedOutputs = { valid: ['a@example.com|SecretA', 'd@example.com|SecretD'], invalid: ['b@example.com|SecretB'], unchecked: ['c@example.com|SecretC', 'e@example.com|SecretE', 'bad row'] };
+      for (const [status, lines] of Object.entries(expectedOutputs)) {
+        const actual = fs.readFileSync(path.join(final.outputDir, `${status}.txt`), 'utf8').split('\n').filter(Boolean).sort();
+        assert.deepEqual(actual, [...lines].sort());
+      }
       await click('export-pending');
       await waitFor(() => fs.existsSync(path.join(final.outputDir, 'pending.txt')), 'pending export');
       assert.equal(fs.readFileSync(path.join(final.outputDir, 'pending.txt'), 'utf8').trim().split('\n').length, 3);
