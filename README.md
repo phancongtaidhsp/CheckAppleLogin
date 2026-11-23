@@ -17,7 +17,7 @@ npm start
 
 1. Chọn file Apple ID UTF-8, mỗi dòng `email|password`. Mật khẩu được giữ nguyên, kể cả ký tự `|` và khoảng trắng. Bỏ dòng trống, chỉ loại các dòng trùng hoàn toàn; các mật khẩu khác nhau của cùng email vẫn là dữ liệu riêng.
 2. Chọn file proxy nếu cần: `host:port` hoặc `host:port:user:pass`. Bỏ đường dẫn proxy để kết nối trực tiếp. Dòng proxy trống/trùng được bỏ qua; proxy sai định dạng chặn bắt đầu.
-3. Chọn số luồng nguyên từ 1–200, mặc định 5, rồi bấm **Bắt đầu kiểm tra**.
+3. Chọn **Thư mục output** bằng nút **Chọn thư mục** hoặc dán đường dẫn. Để trống để dùng thư mục mặc định. Lựa chọn được lưu cho lần mở sau. Chọn số luồng nguyên từ 1–200, mặc định 5, rồi bấm **Bắt đầu kiểm tra**.
 4. **Tạm dừng** ngừng lấy dòng mới, không bắt đầu retry mới và chờ request đang chạy kết thúc; **Tiếp tục kiểm tra** tiếp tục cùng phiên, giữ số lần đã thử và không chạy lại dòng đã lưu. Mỗi lần đăng nhập có timeout request 30 giây và deadline 90 giây. Lỗi mạng/proxy, timeout hoặc HTTP 503 được retry tối đa **3 lần sau lần đầu** (tối đa 4 lần gọi), chờ lần lượt 1, 2 và 3 giây. Các lần thử giữ cùng proxy và cùng một worker, không tăng số luồng. Sai mật khẩu, tài khoản khóa, proxy sai định dạng và phản hồi chưa xác định không tự retry. Chỉ ghi kết quả cuối cùng vào file và thống kê.
 5. **Mở thư mục kết quả** mở thư mục riêng của phiên. **Xuất chưa kiểm tra** xuất các dòng chưa chạy cùng các dòng `unchecked`, để dùng làm đầu vào cho phiên sau. File gốc và các file kết quả không bị ghi đè bởi chức năng xuất này.
 6. **Phiên mới** xóa trạng thái trên giao diện, giữ các file kết quả cũ. Có thể đổi dữ liệu/cấu hình sau khi tạo phiên mới.
@@ -26,7 +26,7 @@ Trạng thái pause/resume giữ trong bộ nhớ khi app còn mở. Đóng cử
 
 ## Kết quả
 
-Tự động lưu trong thư mục `AppleIDResults/run-*` bên dưới `app.getPath('userData')`, ghi ngay sau từng dòng. Không ghi vào thư mục cài đặt app.
+Tự động lưu trong thư mục `run-*` bên trong **Thư mục output** đã chọn, ghi ngay sau từng dòng. Nếu để trống, mặc định dùng `AppleIDResults/run-*` bên dưới `app.getPath('userData')`. Đường dẫn thực tế của phiên hiển thị dưới phần kết quả; nút **Mở thư mục kết quả** mở đúng thư mục đó. Chỉ đổi thư mục output trước khi bắt đầu phiên hoặc sau khi bấm **Phiên mới**.
 
 - `valid.txt`: Apple chấp nhận thông tin đăng nhập (`successfully` hoặc `CHBM`); trường hợp CHBM vẫn cần bước xác minh bổ sung.
 - `invalid.txt`: phản hồi sai thông tin đăng nhập (HTTP 401).

@@ -59,6 +59,15 @@ handle('choose-file', async kind => {
   });
   return result.canceled ? null : result.filePaths[0];
 });
+handle('choose-output-folder', async currentPath => {
+  if (isBusy() || runner) throw new Error('Bấm Phiên mới trước khi đổi thư mục kết quả.');
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Chọn thư mục output',
+    defaultPath: cleanPath(currentPath) || path.join(app.getPath('userData'), 'AppleIDResults'),
+    properties: ['openDirectory', 'createDirectory']
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
 handle('start', config => {
   if (isBusy() || closing) throw new Error('Vui lòng chờ phiên hiện tại kết thúc hoặc tạm dừng xong.');
   if (runner && ['paused', 'failed'].includes(runner.status)) {
@@ -67,7 +76,8 @@ handle('start', config => {
   }
   if (runner) throw new Error('Bấm Phiên mới để chạy dữ liệu mới.');
   const inputs = loadInputs(config || {});
-  runner = new JobRunner({ ...inputs, outputRoot: path.join(app.getPath('userData'), 'AppleIDResults'), check: checkLoginAppleID });
+  const outputRoot = cleanPath(config?.outputFolder) || path.join(app.getPath('userData'), 'AppleIDResults');
+  runner = new JobRunner({ ...inputs, outputRoot, check: checkLoginAppleID });
   runner.on('update', publish);
   launch();
   return runner.snapshot();

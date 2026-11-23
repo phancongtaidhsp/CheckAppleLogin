@@ -18,6 +18,9 @@
       <div class="file-field"><input id="account-path" type="text" placeholder="Chọn file hoặc dán đường dẫn…" autocomplete="off" spellcheck="false"><button id="choose-account" class="secondary" type="button">Chọn file</button></div>
       <p class="hint">Định dạng <code>email|password</code>. Bỏ dòng trống, loại dòng trùng; dòng sai định dạng được lưu vào unchecked.</p>
       <div class="settings"><div><label for="proxy-path">File proxy <span class="muted">(tùy chọn)</span></label><div class="file-field"><input id="proxy-path" type="text" placeholder="Để trống để kết nối trực tiếp" autocomplete="off" spellcheck="false"><button id="choose-proxy" class="secondary" type="button">Chọn file</button></div><p class="hint"><code>host:port</code> hoặc <code>host:port:user:pass</code></p></div><div><label for="concurrency">Số luồng</label><input id="concurrency" type="number" value="5" min="1" max="200" step="1"><p class="hint">1–200 tác vụ đồng thời</p></div></div>
+      <label for="output-folder">Thư mục output <span class="muted">(tùy chọn)</span></label>
+      <div class="file-field"><input id="output-folder" type="text" placeholder="Để trống để dùng thư mục mặc định" autocomplete="off" spellcheck="false"><button id="choose-output" class="secondary" type="button">Chọn thư mục</button></div>
+      <p class="hint">Mỗi phiên tạo một thư mục run-* riêng bên trong thư mục đã chọn. Lựa chọn được lưu cho lần mở sau.</p>
       <div class="actions"><button id="start" class="primary" type="button">Bắt đầu kiểm tra</button><button id="pause" class="secondary" type="button" disabled>Tạm dừng</button><button id="reset" class="text-button" type="button" disabled>Phiên mới</button><span id="elapsed">00:00:00</span></div>
     </section>
     <section class="stats" aria-label="Thống kê phiên chạy">

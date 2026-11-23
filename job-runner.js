@@ -66,8 +66,9 @@ class JobRunner extends EventEmitter {
     this.startedAt = 0;
     this.recent = [];
     this.error = '';
-    fs.mkdirSync(outputRoot, { recursive: true });
-    this.outputDir = fs.mkdtempSync(path.join(outputRoot, 'run-'));
+    this.outputRoot = path.resolve(outputRoot);
+    fs.mkdirSync(this.outputRoot, { recursive: true });
+    this.outputDir = fs.mkdtempSync(path.join(this.outputRoot, 'run-'));
     for (const status of Object.keys(this.counts)) fs.writeFileSync(path.join(this.outputDir, `${status}.txt`), '', { mode: 0o600 });
   }
 
@@ -78,7 +79,7 @@ class JobRunner extends EventEmitter {
       pending: this.rows.length - processed - this.active, active: this.active,
       duplicates: this.duplicates, concurrency: this.concurrency,
       elapsedSeconds: Math.floor((this.elapsedMs + (this.startedAt ? Date.now() - this.startedAt : 0)) / 1000),
-      outputDir: this.outputDir, recent: this.recent, error: this.error
+      outputRoot: this.outputRoot, outputDir: this.outputDir, recent: this.recent, error: this.error
     };
   }
 

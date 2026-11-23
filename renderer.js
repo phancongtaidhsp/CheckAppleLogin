@@ -19,7 +19,8 @@ function render(next) {
   state = next;
   const busy = ['running', 'pausing'].includes(state?.status) || (state?.active || 0) > 0;
   const locked = !!state || commandPending;
-  for (const id of ['account-path', 'proxy-path', 'concurrency', 'choose-account', 'choose-proxy']) $(id).disabled = locked;
+  for (const id of ['account-path', 'proxy-path', 'concurrency', 'choose-account', 'choose-proxy', 'output-folder', 'choose-output']) $(id).disabled = locked;
+  if (state?.outputRoot) $('output-folder').value = state.outputRoot;
   $('start').disabled = commandPending || busy || state?.status === 'completed';
   $('start').textContent = ['paused', 'failed'].includes(state?.status) ? 'Tiếp tục kiểm tra' : 'Bắt đầu kiểm tra';
   $('pause').disabled = commandPending || state?.status !== 'running';
@@ -78,16 +79,28 @@ async function command(fn) {
   } catch (error) { notice(error.message, true); }
   finally { commandPending = false; render(state); }
 }
+function inputConfig() {
+  return { accountPath: $('account-path').value, proxyPath: $('proxy-path').value, concurrency: $('concurrency').value, outputFolder: $('output-folder').value };
+}
+function savePreferences() {
+  try { localStorage.setItem('apple-checker-inputs', JSON.stringify(inputConfig())); } catch { /* Preferences are optional. */ }
+}
+for (const id of ['account-path', 'proxy-path', 'concurrency', 'output-folder']) $(id).addEventListener('change', savePreferences);
 for (const [button, input, kind] of [['choose-account', 'account-path', 'account'], ['choose-proxy', 'proxy-path', 'proxy']]) {
   $(button).addEventListener('click', () => command(async () => {
     const response = await window.electronAPI.chooseFile(kind);
-    if (response.ok && response.value) $(input).value = response.value;
+    if (response.ok && response.value) { $(input).value = response.value; savePreferences(); }
     return response;
   }));
 }
+$('choose-output').addEventListener('click', () => command(async () => {
+  const response = await window.electronAPI.chooseOutputFolder($('output-folder').value);
+  if (response.ok && response.value) { $('output-folder').value = response.value; savePreferences(); }
+  return response;
+}));
 $('start').addEventListener('click', () => command(async () => {
-  const config = { accountPath: $('account-path').value, proxyPath: $('proxy-path').value, concurrency: $('concurrency').value };
-  try { localStorage.setItem('apple-checker-inputs', JSON.stringify(config)); } catch { /* Preferences are optional. */ }
+  const config = inputConfig();
+  savePreferences();
   const response = await window.electronAPI.start(config);
   if (response.ok) render(response.value);
   return response;
@@ -106,7 +119,7 @@ $('export-pending').addEventListener('click', () => command(async () => {
 }));
 try {
   const saved = JSON.parse(localStorage.getItem('apple-checker-inputs') || 'null');
-  if (saved) { $('account-path').value = saved.accountPath || ''; $('proxy-path').value = saved.proxyPath || ''; $('concurrency').value = saved.concurrency || 5; }
+  if (saved) { $('account-path').value = saved.accountPath || ''; $('proxy-path').value = saved.proxyPath || ''; $('concurrency').value = saved.concurrency || 5; $('output-folder').value = saved.outputFolder || ''; }
 } catch { /* Ignore malformed preferences. */ }
 window.electronAPI.onState(render);
 command(async () => {
