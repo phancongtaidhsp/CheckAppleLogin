@@ -1,187 +1,122 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('node:path');
-const electron = require('electron');
-const LineByLineReader = require('line-by-line');
-const fs = require('fs-extra');
-const { sampleSize } = require('lodash');
-const { checkLoginHotmailWithRetry } = require('./action');
-const ipc = electron.ipcMain;
+const fs = require('node:fs');
+const { JobRunner, loadInputs, cleanPath } = require('./job-runner');
+const { checkLoginAppleID } = require('./action');
 
 let win;
-let lr;
-let pause = false;
-let currentIndex = 0;
-let startTime = 0;
-let interval;
+let runner;
+let runPromise;
+let closing = false;
+let quitRequested = false;
+const isBusy = () => !!runPromise;
+const publish = snapshot => {
+  if (win && !win.isDestroyed()) win.webContents.send('run-state', snapshot);
+};
+
+function launch() {
+  runPromise = runner.run().catch(() => {
+    runner.status = 'failed';
+    runner.error = 'Phiên chạy gặp lỗi. Kết quả đã ghi được giữ nguyên.';
+  }).finally(() => { runPromise = null; publish(runner.snapshot()); });
+}
 
 function createWindow() {
-  // Create the browser window.
   win = new BrowserWindow({
-    width: 800,
-    height: 600,
-    webPreferences: {
-      nodeIntegration: false,
-      preload: path.join(__dirname, 'preload.js')
-    }
-  })
-
-  // and load the index.html of the app.
-  win.loadFile('index.html')
+    width: 1120, height: 840, minWidth: 850, minHeight: 650,
+    title: 'Apple ID Login Checker',
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.js') }
+  });
+  win.loadFile(path.join(__dirname, 'index.html'));
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', event => event.preventDefault());
+  win.on('close', event => {
+    if (!isBusy()) return;
+    event.preventDefault();
+    if (closing) return;
+    closing = true;
+    runner.pause();
+    publish({ ...runner.snapshot(), error: 'Đang chờ tác vụ hiện tại kết thúc trước khi đóng…' });
+    runPromise.finally(() => { if (!win.isDestroyed()) win.close(); });
+  });
 }
 
-app.whenReady().then(createWindow)
-
-// Quit when all windows are closed.
-app.on('window-all-closed', () => {
-  // On macOS it is common for applications and their menu bar
-  // to stay active until the user quits explicitly with Cmd + Q
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
-
-const run = async function (pathFileMail, pathFileProxy, thread) {
-  let incompleteFile1 = isFileExists(pathFileMail);
-  let incompleteFile2 = isFileExists(pathFileMail);
-  if (incompleteFile1) {
-    win.webContents.send('checkfiles', incompleteFile1);
-    return;
-  }
-  if (incompleteFile2) {
-    win.webContents.send('checkfiles', incompleteFile2);
-    return;
-  }
-  win.webContents.send('disable', true);
-  let listProxy = fs.readFileSync(pathFileProxy, 'utf8');
-  listProxy = listProxy.split(/\r?\n/);
-  let outvalid = `${__dirname}\\..\\extraResources\\CheckLoginHotmail\\valid.txt`;
-  let outinvalid = `${__dirname}\\..\\extraResources\\CheckLoginHotmail\\invalid.txt`;
-  let startIndex = 0;
-  lr = new LineByLineReader(pathFileMail, {
-    start: currentIndex
-  })
-  lr.on('error', function (err) {
-    // 'err' contains error object
-    win.webContents.send('loi', err);
-    win.webContents.send('disable', false);
+function handle(channel, fn) {
+  ipcMain.handle(channel, async (event, ...args) => {
+    if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) return { ok: false, error: 'Yêu cầu không hợp lệ.' };
+    try { return { ok: true, value: await fn(...args) }; }
+    catch (error) { return { ok: false, error: error.code ? `Không truy cập được file/thư mục (${error.code}).` : error.message }; }
   });
+}
 
-  lr.on('line', async function (info) {
-    const [mail, pass] = info.split("|");
-    if (pause) {
-      isDone = false;
-      lr.close();
-      return;
-    }
-
+handle('get-state', () => runner?.snapshot() || null);
+handle('choose-file', async kind => {
+  if (isBusy() || runner) throw new Error('Bấm Phiên mới trước khi đổi dữ liệu.');
+  if (!['account', 'proxy'].includes(kind)) throw new Error('Loại file không hợp lệ.');
+  const result = await dialog.showOpenDialog(win, {
+    title: kind === 'account' ? 'Chọn file Apple ID (email|password)' : 'Chọn file proxy',
+    properties: ['openFile'], filters: [{ name: 'Text files', extensions: ['txt'] }, { name: 'All files', extensions: ['*'] }]
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+handle('start', config => {
+  if (isBusy() || closing) throw new Error('Vui lòng chờ phiên hiện tại kết thúc hoặc tạm dừng xong.');
+  if (runner && ['paused', 'failed'].includes(runner.status)) {
+    launch();
+    return runner.snapshot();
+  }
+  if (runner) throw new Error('Bấm Phiên mới để chạy dữ liệu mới.');
+  const inputs = loadInputs(config || {});
+  runner = new JobRunner({ ...inputs, outputRoot: path.join(app.getPath('userData'), 'AppleIDResults'), check: checkLoginAppleID });
+  runner.on('update', publish);
+  launch();
+  return runner.snapshot();
+});
+handle('pause', () => runner?.pause() || null);
+handle('reset', () => {
+  if (isBusy()) throw new Error('Hãy tạm dừng và chờ các tác vụ đang chạy kết thúc.');
+  runner?.removeAllListeners();
+  runner = null;
+  publish(null);
+  return null;
+});
+handle('open-results', async () => {
+  if (!runner) throw new Error('Chưa có phiên chạy.');
+  const error = await shell.openPath(runner.outputDir);
+  if (error) throw new Error('Không mở được thư mục kết quả.');
+  return runner.outputDir;
+});
+handle('export-pending', async () => {
+  if (!runner || isBusy()) throw new Error('Chờ tạm dừng hoặc hoàn tất trước khi xuất.');
+  const current = runner;
+  const lines = current.pendingLines();
+  const result = await dialog.showSaveDialog(win, { title: 'Xuất dòng chưa kiểm tra và unchecked', defaultPath: path.join(current.outputDir, 'pending.txt'), filters: [{ name: 'Text files', extensions: ['txt'] }] });
+  if (result.canceled) return null;
+  const destination = path.resolve(cleanPath(result.filePath));
+  const protectedPaths = [current.accountPath, current.proxyPath, ...['valid', 'invalid', 'unchecked'].map(status => path.join(current.outputDir, `${status}.txt`))];
+  const canonical = file => {
+    try { return fs.realpathSync(file); } catch { return path.join(fs.realpathSync(path.dirname(file)), path.basename(file)); }
+  };
+  const sameFile = file => {
+    if (canonical(file) === canonical(destination)) return true;
     try {
-      (async () => {
-        let proxiesApple = sampleSize(listProxy, 5);
-        let { status, email, password } = await checkLoginHotmailWithRetry(mail, pass, proxiesApple);
-        if (status == "valid") {
-          let result = `${email}|${password}|${status}` + "\n";
-          fs.appendFileSync(outvalid, result);
-          win.webContents.send('valid', 1, pause);
-          lr.resume();
-        } else if (status == "invalid") {
-          let result = `${email}|${password}|${status}` + "\n";
-          fs.appendFileSync(outinvalid, result);
-          win.webContents.send('invalid', 1, pause);
-          lr.resume();
-        } else {
-          win.webContents.send('unchecked', 1, pause);
-          lr.resume();
-        }
-      })()
-    } catch (error) {
-      win.webContents.send('unchecked', 1, pause);
-      lr.resume();
-      console.log(error);
-    }
+      const a = fs.statSync(file), b = fs.statSync(destination);
+      return a.dev === b.dev && a.ino === b.ino;
+    } catch { return false; }
+  };
+  if (protectedPaths.filter(Boolean).some(sameFile)) throw new Error('Chọn file khác để giữ nguyên dữ liệu đầu vào và kết quả.');
+  fs.writeFileSync(destination, lines.length ? `${lines.join('\n')}\n` : '', { mode: 0o600 });
+  return { count: lines.length, path: destination };
+});
 
-    if (startIndex >= thread - 1) {
-      lr.pause()
-    } else {
-      startIndex++;
-    }
-    currentIndex++;
-    win.webContents.send('total', currentIndex);
-  });
-
-
-  lr.on('end', async function () {
-    // All lines are read, file is closed now.
-    if (interval) {
-      clearInterval(interval)
-    }
-    win.webContents.send('disable', false);
-  });
-}
-
-function isFileExists(pathFile) {
-  const check = fs.pathExistsSync(pathFile);
-  if (!check) return pathFile;
-  return false;
-}
-
-ipc.on('start', async function (event, pathFileMail, pathFileProxy, thread) {
-  let pathFolder = `${__dirname}\\..\\extraResources\\CheckLoginHotmail`;
-  let incompleteFolder = isFileExists(pathFolder);
-  if (incompleteFolder) {
-    fs.mkdirSync(pathFolder);
+app.whenReady().then(createWindow);
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) { closing = false; createWindow(); } });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('before-quit', event => {
+  if (isBusy()) {
+    event.preventDefault();
+    runner.pause();
+    closing = true;
+    if (!quitRequested) { quitRequested = true; runPromise.finally(() => app.quit()); }
   }
-  pause = false;
-  interval = setInterval(() => {
-    startTime++;
-    win.webContents.send('time', startTime);
-  }, 1000);
-  run(pathFileMail, pathFileProxy, thread);
-})
-
-ipc.on('pause', async function (event) {
-  if (lr) {
-    pause = true;
-    if (interval) {
-      clearInterval(interval)
-    }
-    win.webContents.send('info', "Đang tạm dừng...Vui lòng chờ...", true);
-  }
-})
-
-const xuatKetQua = (pathFileMail) => {
-  let outvalid = `${__dirname}\\..\\extraResources\\CheckLoginHotmail\\valid.txt`;
-  let outinvalid = `${__dirname}\\..\\extraResources\\CheckLoginHotmail\\invalid.txt`;
-  let incompleteFile1 = isFileExists(pathFileMail);
-  if (incompleteFile1) {
-    win.webContents.send('checkfiles', incompleteFile1);
-    return;
-  }
-  let listMail = fs.readFileSync(pathFileMail, 'utf8');
-  listMail = listMail.split(/\r?\n/);
-  let listMailValid = fs.readFileSync(outvalid, 'utf8');
-  listMailValid = listMailValid.split(/\r?\n/);
-  let listMailInvalid = fs.readFileSync(outinvalid, 'utf8');
-  listMailInvalid = listMailInvalid.split(/\r?\n/);
-  // remove all mail valid
-  for (const maildata of listMailValid) {
-    let mail = maildata.split('|')?.[0];
-    let indexMail = listMail.findIndex(m => m.includes(mail));
-    if (indexMail >= 0) {
-      listMail = [...listMail.slice(0, indexMail), ...listMail.slice(indexMail + 1)];
-    }
-  }
-  // remove all mail invalid
-  for (const maildata of listMailInvalid) {
-    let mail = maildata.split('|')?.[0];
-    let indexMail = listMail.findIndex(m => m.includes(mail));
-    if (indexMail >= 0) {
-      listMail = [...listMail.slice(0, indexMail), ...listMail.slice(indexMail + 1)];
-    }
-  }
-  fs.writeFileSync(pathFileMail, listMail.join('\n'), 'utf8');
-}
-
-ipc.on('result', function (event, pathFileMail) {
-  xuatKetQua(pathFileMail);
-  win.webContents.send('result', true);
-})
+});

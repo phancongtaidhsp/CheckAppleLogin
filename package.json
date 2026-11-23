@@ -1,14 +1,15 @@
 {
-  "name": "validhotmailpass2026",
+  "name": "apple-id-login-checker",
   "version": "1.0.0",
-  "description": "validhotmailpass2026",
+  "description": "Apple ID login checker with bounded concurrency and per-run results",
   "main": "main.js",
   "scripts": {
     "start": "electron-forge start",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/auth.test.js test/runner.test.js",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "test:electron": "electron test/electron-smoke.js"
   },
   "author": "TaiPC",
   "license": "ISC",
@@ -25,8 +26,8 @@
     "electron-rebuild": "^2.0.1"
   },
   "build": {
-    "appId": "tai.pc.validhotmailpass2026",
-    "productName": "Check Valid Hotmail (2026. v1)",
+    "appId": "tai.pc.appleidloginchecker",
+    "productName": "Apple ID Login Checker",
     "target": "nsis",
     "nsis": {
       "allowToChangeInstallationDirectory": true,
@@ -62,5 +63,6 @@
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "randomatic": "^3.1.1",
     "user-agents": "^1.1.382"
-  }
+  },
+  "productName": "Apple ID Login Checker"
 }

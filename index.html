@@ -1,58 +1,41 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <title>Check Login|Pass Hotmail (2026. v1)</title>
-  <!-- https://electronjs.org/docs/tutorial/security#csp-meta-tag -->
-  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'">
+  <title>Apple ID Login Checker</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="./css/bootstrap.css">
+  <script src="renderer.js" defer></script>
 </head>
-
 <body>
-  <h1 class="title-app">Check Login|Pass Hotmail (2026. v1)</h1>
-  <div id="thongbao" class="alert alert-success hidden" role="alert">
-    Đã chạy xong file data
-  </div>
-  <div class="wr">
-    <button id="start" type="button" class="button btn btn-primary">Start</button>
-    <button id="pause" type="button" class="button btn btn-danger">Pause</button>
-    <button id="result" class="button btn btn-info">Xuất kết quả</button>
-    <div class="value">
-      <input type="input" id="filepathmail" placeholder="Đường dẫn file mail">
-      <input type="input" id="filepathproxy" placeholder="Đường dẫn file proxy">
-      <input type="input" id="thread" placeholder="Số luồng">
-    </div>
-    <div class="value">
-      <div class="total">
-        <span>Time: </span>
-        <span id="time">0s</span>
-      </div>
-    </div>
-    <div class="value">
-      <div class="valid">
-        <span>Valid: </span>
-        <span id="valid">0</span>
-      </div>
-      <div class="invalid">
-        <span>Invalid: </span>
-        <span id="invalid">0</span>
-      </div>
-      <div class="unchecked">
-        <span>Unchecked: </span>
-        <span id="unchecked">0</span>
-      </div>
-      <div class="total">
-        <span>Total: </span>
-        <span id="total">0</span>
-      </div>
-    </div>
-  </div>
-  <ul class="info">
-    <li>file data format theo mail|pass</li>
-  </ul>
-  <script src="./renderer.js"></script>
+  <main class="app">
+    <header><div><p class="eyebrow">ACCOUNT TOOLS / APPLE ID</p><h1>Apple ID Login Checker</h1><p class="subtitle">Kiểm tra thông tin đăng nhập, theo dõi tiến độ và lưu kết quả theo phiên.</p></div><span id="status" class="status">Sẵn sàng</span></header>
+    <div id="notice" class="notice hidden" role="status" aria-live="polite"></div>
+    <section class="panel" aria-labelledby="input-heading">
+      <div class="section-heading"><h2 id="input-heading">Dữ liệu & cấu hình</h2><span>Định dạng UTF-8 · mỗi dòng một tài khoản</span></div>
+      <label for="account-path">File Apple ID <span class="required">*</span></label>
+      <div class="file-field"><input id="account-path" type="text" placeholder="Chọn file hoặc dán đường dẫn…" autocomplete="off" spellcheck="false"><button id="choose-account" class="secondary" type="button">Chọn file</button></div>
+      <p class="hint">Định dạng <code>email|password</code>. Bỏ dòng trống, loại dòng trùng; dòng sai định dạng được lưu vào unchecked.</p>
+      <div class="settings"><div><label for="proxy-path">File proxy <span class="muted">(tùy chọn)</span></label><div class="file-field"><input id="proxy-path" type="text" placeholder="Để trống để kết nối trực tiếp" autocomplete="off" spellcheck="false"><button id="choose-proxy" class="secondary" type="button">Chọn file</button></div><p class="hint"><code>host:port</code> hoặc <code>host:port:user:pass</code></p></div><div><label for="concurrency">Số luồng</label><input id="concurrency" type="number" value="5" min="1" max="200" step="1"><p class="hint">1–200 tác vụ đồng thời</p></div></div>
+      <div class="actions"><button id="start" class="primary" type="button">Bắt đầu kiểm tra</button><button id="pause" class="secondary" type="button" disabled>Tạm dừng</button><button id="reset" class="text-button" type="button" disabled>Phiên mới</button><span id="elapsed">00:00:00</span></div>
+    </section>
+    <section class="stats" aria-label="Thống kê phiên chạy">
+      <div class="stat"><span>Đã xử lý / Tổng</span><strong><span id="processed">0</span><small> / <span id="total">0</span></small></strong></div>
+      <div class="stat valid"><span>Valid</span><strong id="valid">0</strong></div>
+      <div class="stat invalid"><span>Invalid</span><strong id="invalid">0</strong></div>
+      <div class="stat unchecked"><span>Unchecked</span><strong id="unchecked">0</strong></div>
+    </section>
+    <section class="panel results" aria-labelledby="results-heading">
+      <div class="section-heading"><h2 id="results-heading">Tiến độ & kết quả</h2><span id="progress-label">Chưa có phiên chạy</span></div>
+      <progress id="progress" max="100" value="0" aria-label="Tiến độ kiểm tra"></progress>
+      <div class="progress-detail"><span id="work-detail">Chọn dữ liệu và bắt đầu kiểm tra.</span><span id="duplicate-detail"></span></div>
+      <div class="result-actions"><button id="open-results" class="secondary" type="button" disabled>Mở thư mục kết quả</button><button id="export-pending" class="secondary" type="button" disabled>Xuất chưa kiểm tra</button></div>
+      <p class="hint" id="output-path">Kết quả được tự động lưu vào valid.txt, invalid.txt và unchecked.txt, trong thư mục riêng của từng phiên.</p>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Dòng</th><th scope="col">Apple ID</th><th scope="col">Kết quả</th><th scope="col">Chi tiết</th></tr></thead><tbody id="recent"><tr><td colspan="4" class="empty">Kết quả mới nhất sẽ xuất hiện tại đây.</td></tr></tbody></table></div>
+      <p class="hint">Hiển thị tối đa 100 kết quả mới nhất. Mật khẩu chỉ nằm trong file kết quả, không hiển thị trên bảng.</p>
+    </section>
+    <footer>Valid: thông tin đăng nhập được chấp nhận, có thể cần xác minh thêm. Invalid: sai thông tin đăng nhập.<br>Unchecked: lỗi mạng/proxy, tài khoản khóa hoặc phản hồi chưa xác định. File đầu vào luôn được giữ nguyên.</footer>
+  </main>
 </body>
-
 </html>
